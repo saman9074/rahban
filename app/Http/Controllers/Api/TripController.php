@@ -34,56 +34,69 @@ class TripController extends Controller
      * @return JsonResponse
      */
     public function start(Request $request): JsonResponse
-{
-    // اعتبارسنجی اولیه درخواست
-    $request->validate([
-        'vehicle_info' => 'nullable|array',
-        'location' => 'required|array',
-        'guardians' => 'nullable|array', // نگهبانان دیگر اجباری نیستند
-    ]);
+    {
+        // ۱. اعتبارسنجی اولیه درخواست (حالا از نوع multipart)
+        $request->validate([
+            'data' => 'required|json',
+            'plate_photo' => 'nullable|image|max:5120', // حداکثر ۵ مگابایت
+        ]);
 
-    $user = Auth::user();
+        // ۲. دیکد کردن رشته JSON به آرایه
+        $tripData = json_decode($request->data, true);
 
-    // بررسی اینکه آیا نگهبان ارسال شده یا باید از پیش‌فرض‌ها استفاده کرد
-    $guardiansData = $request->input('guardians');
-    if (empty($guardiansData)) {
-        $defaultGuardians = $user->guardians()->where('is_default', true)->get();
-        if ($defaultGuardians->isEmpty()) {
-            return response()->json(['message' => 'هیچ نگهبانی برای این سفر انتخاب نشده و نگهبان پیش‌فرضی نیز وجود ندارد.'], 422);
+        // ۳. اعتبارسنجی داده‌های دیکد شده
+        $validator = Validator::make($tripData, [
+            'vehicle_info' => 'nullable|array',
+            'location' => 'required|array',
+            'guardians' => 'nullable|array',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
         }
-        // تبدیل مدل‌های Guardian به آرایه مورد نیاز
-        $guardiansData = $defaultGuardians->map(function ($guardian) {
-            return ['name' => $guardian->name, 'phone_number' => $guardian->phone_number];
-        })->toArray();
+
+        $user = Auth::user();
+
+        // ۴. بررسی نگهبانان پیش‌فرض (این بخش بدون تغییر باقی می‌ماند)
+        $guardiansData = $tripData['guardians'] ?? [];
+        if (empty($guardiansData)) {
+            $defaultGuardians = $user->guardians()->where('is_default', true)->get();
+            if ($defaultGuardians->isEmpty()) {
+                return response()->json(['message' => 'هیچ نگهبانی برای این سفر انتخاب نشده و نگهبان پیش‌فرضی نیز وجود ندارد.'], 422);
+            }
+            $guardiansData = $defaultGuardians->map(fn ($g) => ['name' => $g->name, 'phone_number' => $g->phone_number])->toArray();
+        }
+        
+        // ۵. ذخیره عکس پلاک در صورت وجود
+        $platePhotoPath = null;
+        if ($request->hasFile('plate_photo')) {
+            $platePhotoPath = $request->file('plate_photo')->store('plate_photos', 'public');
+        }
+
+        // ۶. ایجاد سفر جدید با اطلاعات کامل
+        $trip = $user->trips()->create([
+            'vehicle_info' => $tripData['vehicle_info'] ?? null,
+            'plate_photo_path' => $platePhotoPath, // ذخیره مسیر عکس
+            'status' => 'active',
+            'share_token' => \Illuminate\Support\Str::random(40),
+            'expires_at' => \Carbon\Carbon::now()->addHours(3),
+            'deletable_at' => \Carbon\Carbon::now()->addDays(7),
+        ]);
+
+        // ۷. ذخیره نگهبانان و موقعیت (این بخش بدون تغییر باقی می‌ماند)
+        foreach ($guardiansData as $guardianItem) {
+            $trip->guardians()->create($guardianItem);
+        }
+        $trip->locations()->create($tripData['location']);
+
+        // ۸. ارسال نوتیفیکیشن
+        $this->notificationService->sendTripStartedNotifications($trip->fresh('user', 'guardians'));
+
+        return response()->json([
+            'message' => 'سفر با موفقیت آغاز شد.',
+            'trip' => $trip->load('guardians', 'locations')
+        ], 201);
     }
-
-    // *** شروع بخش اصلاح شده ***
-    // ایجاد سفر جدید با تمام اطلاعات لازم
-    $trip = $user->trips()->create([
-        'vehicle_info' => $request->vehicle_info,
-        'status' => 'active',
-        'share_token' => \Illuminate\Support\Str::random(40), // تولید توکن اشتراک‌گذاری
-        'expires_at' => \Carbon\Carbon::now()->addHours(3),       // انقضای لینک پس از ۳ ساعت
-        'deletable_at' => \Carbon\Carbon::now()->addDays(7),    // حذف نهایی پس از ۷ روز
-    ]);
-    // *** پایان بخش اصلاح شده ***
-
-    // ذخیره نگهبانان سفر (از درخواست یا از پیش‌فرض‌ها)
-    foreach ($guardiansData as $guardianItem) {
-        $trip->guardians()->create($guardianItem);
-    }
-
-    // ذخیره اولین موقعیت مکانی
-    $trip->locations()->create($request->location);
-
-    // ارسال نوتیفیکیشن
-    $this->notificationService->sendTripStartedNotifications($trip->fresh('user', 'guardians'));
-
-    return response()->json([
-        'message' => 'سفر با موفقیت آغاز شد.',
-        'trip' => $trip->load('guardians', 'locations')
-    ], 201);
-}
 
     /**
      * به‌روزرسانی موقعیت مکانی مسافر در طول سفر

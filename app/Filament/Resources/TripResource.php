@@ -26,35 +26,27 @@ class TripResource extends Resource
         return $form->schema([]);
     }
 
-    public static function table(Table $table): Table
+public static function table(Table $table): Table
     {
         return $table
             ->columns([
                 TextColumn::make('user.name')->label('مسافر')->searchable(),
-                BadgeColumn::make('status')->label('وضعیت')
-                    ->colors([
-                        'success' => 'completed',
-                        'warning' => 'active',
-                        'danger' => 'emergency',
-                    ]),
+                BadgeColumn::make('status')->label('وضعیت') /* ... */,
+
+                // ** اصلاح شده: نمایش لینک کوتاه **
                 TextColumn::make('shortUrl.short_code')
                     ->label('لینک کوتاه')
-                    ->formatStateUsing(fn ($state) => $state ? url("/r/{$state}") : 'ندارد')
-                    ->url(fn ($state) => $state ? url("/r/{$state}") : null, true), // Opens in a new tab
+                    ->url(fn (Trip $record) => $record->shortUrl ? route('shortlink.redirect', ['short_code' => $record->shortUrl->short_code]) : null, true)
+                    ->formatStateUsing(fn ($state) => $state ? "لینک" : "ندارد"),
+                
+                // ** اصلاح شده: نمایش عکس‌ها **
+                ImageColumn::make('plate_photo_path')->label('عکس پلاک')->disk('public')->visibility('private'),
+                ImageColumn::make('emergency_photo_path')->label('عکس اضطراری')->disk('public')->visibility('private'),
+
                 TextColumn::make('created_at')->label('زمان شروع')->dateTime('Y-m-d H:i')->sortable(),
-                ImageColumn::make('plate_photo_path')->label('عکس پلاک')->disk('public'),
-                ImageColumn::make('emergency_photo_path')->label('عکس اضطراری')->disk('public'),
-            ])
-            ->filters([
-                //
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
-            ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                ]),
             ]);
     }
 

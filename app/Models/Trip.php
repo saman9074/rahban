@@ -6,11 +6,13 @@ use Illuminate\Database\Eloquent\Model;
 class Trip extends Model
 {
     protected $fillable = [
-        'user_id',
-        'vehicle_info',
-        'status',
-        'share_token',
-        'expires_at',
+    'user_id',
+    'vehicle_info',
+    'plate_photo_path',
+    'status',
+    'share_token',
+    'expires_at',
+    'deletable_at',
     ];
 
     protected function casts(): array

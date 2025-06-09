@@ -40,10 +40,9 @@ class PublicViewController extends Controller
     public function getTripData(string $share_token): JsonResponse
     {
         // پیدا کردن سفر و بارگذاری روابط مورد نیاز
-        $trip = Trip::with(['user', 'locations' => function ($query) {
-            // فقط آخرین موقعیت مکانی را دریافت کن
-            $query->latest()->limit(1);
-        }])->where('share_token', $share_token)->first();
+        $trip = Trip::with(['user', 'locations' => fn($q) => $q->latest()->limit(1)])
+                ->where('share_token', $share_token)
+                ->first();
 
         // بررسی اعتبار سفر
         if (!$trip || $trip->expires_at < Carbon::now()) {
@@ -65,6 +64,7 @@ class PublicViewController extends Controller
             'status' => $trip->status, // 'active' or 'emergency'
             'passenger_name' => $trip->user->name,
             'vehicle_info' => $trip->vehicle_info,
+            'plate_photo_url' => $trip->plate_photo_path ? asset('storage/' . $trip->plate_photo_path) : null, // <-- این خط اضافه شده
             'last_location' => $lastLocation ? [
                 'latitude' => $lastLocation->latitude,
                 'longitude' => $lastLocation->longitude,

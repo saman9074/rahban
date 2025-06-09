@@ -34,6 +34,8 @@ class UserResource extends Resource
         return $table
             ->columns([
                 TextColumn::make('name')->label('نام')->searchable(),
+                // ** اضافه شده: نمایش ایمیل **
+                TextColumn::make('email')->label('ایمیل')->searchable(),
                 TextColumn::make('phone_number')->label('شماره تلفن')->searchable(),
                 IconColumn::make('is_admin')->label('ادمین؟')->boolean(),
                 TextColumn::make('created_at')->label('تاریخ ثبت نام')->dateTime('Y-m-d')->sortable(),

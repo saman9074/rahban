@@ -16,4 +16,15 @@ class ListTrips extends ListRecords
             Actions\CreateAction::make(),
         ];
     }
+
+        public static function infolist(Infolist $infolist): Infolist
+        {
+            return $infolist
+                ->schema([
+                    Components\TextEntry::make('user.name')->label('مسافر'),
+                    Components\TextEntry::make('status')->label('وضعیت')->badge(),
+                    Components\ImageEntry::make('plate_photo_path')->label('عکس پلاک')->disk('public'),
+                    Components\ImageEntry::make('emergency_photo_path')->label('عکس اضطراری')->disk('public'),
+                ]);
+        }
 }
