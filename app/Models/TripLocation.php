@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class TripLocation extends Model
 {
-     protected $fillable = ['trip_id', 'latitude', 'longitude'];
+     protected $fillable = ['trip_id', 'encrypted_data'];
 
     public function trip()
     {

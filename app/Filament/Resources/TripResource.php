@@ -82,7 +82,7 @@ class TripResource extends Resource
     {
         return [
             'index' => Pages\ListTrips::route('/'),
-            'view' => Pages\ViewTrip::route('/{record}'), // این صفحه برای نمایش جزئیات لازم است
+            //'view' => Pages\ViewTrip::route('/{record}'), // این صفحه برای نمایش جزئیات لازم است
         ];
     }
 }

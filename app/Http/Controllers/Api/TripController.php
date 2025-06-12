@@ -29,25 +29,22 @@ class TripController extends Controller
     }
 
     /**
-     * شروع یک سفر جدید، ذخیره اطلاعات و ارسال نوتیفیکیشن
-     * @param Request $request
-     * @return JsonResponse
+     * شروع یک سفر جدید با دریافت اولین موقعیت رمزنگاری شده
      */
     public function start(Request $request): JsonResponse
     {
-        // ۱. اعتبارسنجی اولیه درخواست (حالا از نوع multipart)
+        // ۱. اعتبارسنجی درخواست multipart
         $request->validate([
             'data' => 'required|json',
-            'plate_photo' => 'nullable|image|max:5120', // حداکثر ۵ مگابایت
+            'plate_photo' => 'nullable|image|max:5120',
         ]);
 
-        // ۲. دیکد کردن رشته JSON به آرایه
         $tripData = json_decode($request->data, true);
 
-        // ۳. اعتبارسنجی داده‌های دیکد شده
+        // ۲. اعتبارسنجی داده‌های JSON (با دریافت داده رمزنگاری شده اولیه)
         $validator = Validator::make($tripData, [
             'vehicle_info' => 'nullable|array',
-            'location' => 'required|array',
+            'initial_encrypted_data' => 'required|string', // <-- تغییر کلیدی
             'guardians' => 'nullable|array',
         ]);
 
@@ -57,7 +54,7 @@ class TripController extends Controller
 
         $user = Auth::user();
 
-        // ۴. بررسی نگهبانان پیش‌فرض (این بخش بدون تغییر باقی می‌ماند)
+        // ۳. بررسی نگهبانان پیش‌فرض
         $guardiansData = $tripData['guardians'] ?? [];
         if (empty($guardiansData)) {
             $defaultGuardians = $user->guardians()->where('is_default', true)->get();
@@ -67,27 +64,31 @@ class TripController extends Controller
             $guardiansData = $defaultGuardians->map(fn ($g) => ['name' => $g->name, 'phone_number' => $g->phone_number])->toArray();
         }
         
-        // ۵. ذخیره عکس پلاک در صورت وجود
+        // ۴. ذخیره عکس پلاک
         $platePhotoPath = null;
         if ($request->hasFile('plate_photo')) {
             $platePhotoPath = $request->file('plate_photo')->store('plate_photos', 'public');
         }
 
-        // ۶. ایجاد سفر جدید با اطلاعات کامل
+        // ۵. ایجاد سفر جدید
         $trip = $user->trips()->create([
             'vehicle_info' => $tripData['vehicle_info'] ?? null,
-            'plate_photo_path' => $platePhotoPath, // ذخیره مسیر عکس
+            'plate_photo_path' => $platePhotoPath,
             'status' => 'active',
-            'share_token' => \Illuminate\Support\Str::random(40),
-            'expires_at' => \Carbon\Carbon::now()->addHours(3),
-            'deletable_at' => \Carbon\Carbon::now()->addDays(7),
+            'share_token' => Str::random(40),
+            'expires_at' => Carbon::now()->addHours(3),
+            'deletable_at' => Carbon::now()->addDays(15),
         ]);
 
-        // ۷. ذخیره نگهبانان و موقعیت (این بخش بدون تغییر باقی می‌ماند)
+        // ۶. ذخیره نگهبانان سفر
         foreach ($guardiansData as $guardianItem) {
             $trip->guardians()->create($guardianItem);
         }
-        $trip->locations()->create($tripData['location']);
+        
+        // ۷. ذخیره اولین موقعیت مکانی رمزنگاری شده
+        $trip->locations()->create([
+            'encrypted_data' => $tripData['initial_encrypted_data']
+        ]);
 
         // ۸. ارسال نوتیفیکیشن
         $this->notificationService->sendTripStartedNotifications($trip->fresh('user', 'guardians'));
@@ -99,37 +100,25 @@ class TripController extends Controller
     }
 
     /**
-     * به‌روزرسانی موقعیت مکانی مسافر در طول سفر
-     * @param Request $request
-     * @param Trip $trip
-     * @return JsonResponse
+     * به‌روزرسانی موقعیت مکانی با دریافت داده‌های رمزنگاری شده
      */
     public function updateLocation(Request $request, Trip $trip): JsonResponse
     {
-        // بررسی اینکه کاربر فعلی مالک این سفر باشد
         if ($request->user()->id !== $trip->user_id) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $validator = Validator::make($request->all(), [
-            'latitude' => 'required|numeric|between:-90,90',
-            'longitude' => 'required|numeric|between:-180,180',
+        $request->validate(['data' => 'required|string']);
+
+        $trip->locations()->create([
+            'encrypted_data' => $request->data
         ]);
 
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
-
-        $trip->locations()->create($request->only('latitude', 'longitude'));
-
-        return response()->json(['message' => 'Location updated successfully.']);
+        return response()->json(['message' => 'Location updated.']);
     }
 
     /**
-     * اعلام اتمام سفر و غیرفعال کردن لینک اشتراک‌گذاری
-     * @param Request $request
-     * @param Trip $trip
-     * @return JsonResponse
+     * اعلام اتمام سفر
      */
     public function complete(Request $request, Trip $trip): JsonResponse
     {
@@ -144,16 +133,11 @@ class TripController extends Controller
         $trip->status = 'completed';
         $trip->save();
 
-        // در اینجا هم می‌توانید یک نوتیفیکیشن "سفر به سلامت پایان یافت" ارسال کنید.
-
         return response()->json(['message' => 'Trip completed successfully.']);
     }
 
     /**
-     * فعال‌سازی وضعیت اضطراری و ارسال نوتیفیکیشن فوری
-     * @param Request $request
-     * @param Trip $trip
-     * @return JsonResponse
+     * فعال‌سازی وضعیت اضطراری
      */
     public function triggerSOS(Request $request, Trip $trip): JsonResponse
     {
@@ -164,7 +148,6 @@ class TripController extends Controller
         $trip->status = 'emergency';
         $trip->save();
 
-        // ارسال پیامک هشدار اضطراری به همه نگهبانان
         $this->notificationService->sendSosNotifications($trip->fresh('user', 'guardians'));
 
         return response()->json(['message' => 'SOS triggered. Guardians have been notified.']);
@@ -172,22 +155,24 @@ class TripController extends Controller
 
     /**
      * دریافت تاریخچه سفرهای کاربر
-     * @param Request $request
-     * @return \Illuminate\Pagination\LengthAwarePaginator
      */
     public function history(Request $request)
     {
+        // با توجه به منطق جدید، کاربر به تاریخچه دسترسی ندارد.
+        // اما این اندپوینت را برای استفاده‌های احتمالی آینده نگه می‌داریم.
         return $request->user()->trips()->latest()->paginate(15);
     }
 
-
+    /**
+     * آپلود عکس اضطراری
+     */
     public function uploadEmergencyPhoto(Request $request, Trip $trip)
     {
         if ($request->user()->id !== $trip->user_id || $trip->status !== 'emergency') {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $request->validate(['photo' => 'required|image|max:5120']); // 5MB Max
+        $request->validate(['photo' => 'required|image|max:5120']);
 
         $path = $request->file('photo')->store('emergency_photos', 'public');
         $trip->emergency_photo_path = $path;
