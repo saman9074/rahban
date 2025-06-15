@@ -180,4 +180,28 @@ class TripController extends Controller
 
         return response()->json(['message' => 'عکس اضطراری با موفقیت آپلود شد.', 'path' => $path]);
     }
+
+
+        /**
+     * ذخیره یک بسته کامل از داده‌های اضطراری (GPS, Cell, Wi-Fi)
+     * این متد فقط باید در حالت SOS توسط کلاینت فراخوانی شود.
+     */
+    public function storeSosData(Request $request, Trip $trip): JsonResponse
+    {
+        // اطمینان از اینکه کاربر مالک سفر است و سفر در حالت اضطراری قرار دارد
+        if ($request->user()->id !== $trip->user_id || $trip->status !== 'emergency') {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $request->validate([
+            'data' => 'required|string', // دریافت بسته کامل JSON به صورت یک رشته رمزنگاری شده
+        ]);
+
+        $trip->sosData()->create([
+            'encrypted_payload' => $request->data,
+        ]);
+
+        return response()->json(['message' => 'SOS data packet received.']);
+    }
+
 }

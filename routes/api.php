@@ -19,6 +19,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/trips/{trip}/location', [TripController::class, 'updateLocation']);
     Route::post('/trips/{trip}/complete', [TripController::class, 'complete']);
     Route::post('/trips/{trip}/sos', [TripController::class, 'triggerSOS']);
+    //SOS Data
+    Route::post('/trips/{trip}/sos-data', [TripController::class, 'storeSosData']);
 
     // ۱. مسیرهای تاریخچه سفر و پروفایل کاربری
     Route::get('/trips', [TripController::class, 'history']);

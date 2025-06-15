@@ -42,4 +42,10 @@ class Trip extends Model
     {
         return $this->hasOne(ShortUrl::class);
     }
+
+    public function sosData()
+    {
+        return $this->hasMany(SosData::class);
+    }
+
 }

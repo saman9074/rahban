@@ -34,7 +34,7 @@ class NotificationService
 
         $variables = [
             'passengerName' => $trip->user->name,
-            //'link' => $shortUrl
+            'link' => $shortUrl
         ];
 
         foreach ($trip->guardians as $guardian) {
